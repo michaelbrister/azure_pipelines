@@ -1,0 +1,5 @@
+jobs:
+  - job: RunTests
+    steps:
+      - script: echo "🧪 Running Unit Tests"
+      - script: dotnet test
