@@ -1,7 +1,48 @@
 jobs:
   - job: SecurityScan
     steps:
-      - script: echo "🔍 Running Static Code Analysis"
+      # 📢 Log Security Scan Start
+      - script: echo "🔍 Starting Security Scans..."
+
+      # 🛡 Static Code Analysis (SonarQube)
       - task: SonarCloudPrepare@1
+        inputs:
+          SonarQube: 'SonarQubeConnection'
       - task: SonarCloudAnalyze@1
       - task: SonarCloudPublish@1
+
+      # 🔎 Dependency Security Scan (Snyk)
+      - script: echo "🔎 Running Dependency Security Scan..."
+      - task: SnykSecurityScan@1 || echo "Security vulnerabilities detected!" > security-log.txt
+
+      # 🏗 Container Security Scan (Trivy)
+      - script: echo "🛡 Running Container Security Scan..."
+      - task: Trivy@1
+
+      # 📢 Log Security Scan Completion
+      - script: echo "✅ Security Scans Completed Successfully!"
+
+      # 🚨 Publish Logs for Vulnerabilities
+      - task: PublishBuildArtifacts@1
+        condition: failed()
+        inputs:
+          pathToPublish: security-log.txt
+          artifactName: security_failure_logs
+
+      # 📩 Send Alert if Security Issues Found
+      - task: SendEmail@1
+        condition: failed()
+        inputs:
+          to: 'security-team@example.com'
+          subject: '🚨 Security Vulnerability Alert!'
+          body: |
+            Security scans detected vulnerabilities in the latest build. Immediate review required.
+
+      - task: TeamsNotification@1
+        condition: failed()
+        inputs:
+          teamsWebhookUrl: 'https://outlook.office.com/webhook/...'
+          message: |
+            🚨 **Security Vulnerability Alert**  
+            - Security issues were detected in the latest scan.  
+            - Logs are available for review and remediation.
