@@ -1,0 +1,18 @@
+parameters:
+  - name: environment
+    type: string
+  - name: appName
+    type: string
+  - name: slotName
+    type: string
+
+jobs:
+  - job: Deploy
+    steps:
+      - script: echo "Deploying to ${{ parameters.environment }} Environment"
+      - task: AzureWebApp@1
+        inputs:
+          azureSubscription: 'AzureSubscription'
+          appName: '${{ parameters.appName }}'
+          package: '$(Build.ArtifactStagingDirectory)'
+      - script: az webapp deployment slot swap -n ${{ parameters.appName }} -s ${{ parameters.slotName }}
