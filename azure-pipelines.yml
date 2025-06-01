@@ -1,12 +1,57 @@
+trigger:
+  branches:
+    include:
+      - dev
+      - stage
+      - main
+
 stages:
+
+  # 🏗 Build Stage
+  - stage: Build
+    jobs:
+      - job: Build
+        steps:
+          - script: echo "Building the application"
+          - script: dotnet build
+          - script: dotnet test
+          - script: dotnet publish -c Release -o $(Build.ArtifactStagingDirectory)
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: $(Build.ArtifactStagingDirectory)
+              artifactName: drop
+
+  # 🧪 Testing Stage (Modularized)
   - stage: Testing
     jobs:
       - template: test-template.yml
 
+  # 🔍 Security Scanning Stage (Modularized)
   - stage: Security_Scanning
     jobs:
       - template: security-template.yml
 
+  # 🚀 Deployment to Dev
+  - stage: Deploy_Dev
+    condition: eq(variables['Build.SourceBranchName'], 'dev')
+    jobs:
+      - template: deploy-template.yml
+        parameters:
+          environment: 'Development'
+          appName: 'myapp-dev'
+          slotName: 'staging-slot'
+
+  # 🚀 Deployment to Staging
+  - stage: Deploy_Stage
+    condition: eq(variables['Build.SourceBranchName'], 'stage')
+    jobs:
+      - template: deploy-template.yml
+        parameters:
+          environment: 'Staging'
+          appName: 'myapp-stage'
+          slotName: 'staging-slot'
+
+  # 🚀 Deployment to Production (Blue-Green, Rollback, Retry)
   - stage: Deploy_Prod
     condition: eq(variables['Build.SourceBranchName'], 'main')
     jobs:
@@ -18,11 +63,59 @@ stages:
               instructions: 'Confirm deployment to production'
               onTimeout: 'reject'
 
-      - job: Deploy_Prod
+      - job: Deploy_Blue
         dependsOn: Approval
-        jobs:
-          - template: deploy-template.yml
-            parameters:
-              environment: 'Production'
-              appName: 'myapp-prod'
-              slotName: 'blue'
+        steps:
+          - script: echo "Deploying to Blue Slot"
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'AzureSubscription'
+              appName: 'myapp-prod-blue'
+              package: '$(Build.ArtifactStagingDirectory)'
+
+      # 🔍 Deployment Validation & Retry Logic
+      - job: Validate_Deployment
+        dependsOn: Deploy_Blue
+        steps:
+          - script: echo "Verifying Deployment..."
+          - retryCount: 3  # Retries up to 3 times before failing
+          - script: |
+              response=$(curl -s https://myapp-prod-blue.azurewebsites.net/health)
+              if [[ "$response" != "healthy" ]]; then
+                echo "❌ Deployment validation failed! Retrying..."
+                exit 1
+
+          - task: TeamsNotification@1
+            condition: failed()
+            inputs:
+              teamsWebhookUrl: 'https://outlook.office.com/webhook/...'
+              message: |
+                ⚠ **Deployment Validation Failed**  
+                - Retrying validation (Attempt $(System.RetryCount) of 3)  
+                - Timestamp: $(Build.BuildId)
+
+      # 🚨 Automatic Rollback on Failure
+      - job: Rollback
+        condition: failed()
+        dependsOn: Validate_Deployment
+        steps:
+          - script: echo "Rolling back to previous stable version"
+          - script: az webapp deployment slot swap -n myapp-prod -s previous-slot
+
+          - task: SendEmail@1
+            inputs:
+              to: 'devops-team@example.com'
+              subject: '🚨 Deployment Rollback Alert!'
+              body: |
+                The deployment failed, triggering an automatic rollback.
+                - Timestamp: $(Build.BuildId)
+                - Check logs for details.
+
+      # ✅ Swap Slots Only If Deployment Succeeds
+      - job: Swap_Slots
+        condition: succeeded()
+        dependsOn: Validate_Deployment
+        steps:
+          - script: echo "Swapping Blue Slot with Production"
+          - script: az webapp deployment slot swap -n myapp-prod -s blue
+
