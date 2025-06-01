@@ -1,0 +1,7 @@
+jobs:
+  - job: SecurityScan
+    steps:
+      - script: echo "🔍 Running Static Code Analysis"
+      - task: SonarCloudPrepare@1
+      - task: SonarCloudAnalyze@1
+      - task: SonarCloudPublish@1
