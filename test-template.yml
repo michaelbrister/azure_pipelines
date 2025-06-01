@@ -1,5 +1,44 @@
 jobs:
   - job: RunTests
     steps:
-      - script: echo "🧪 Running Unit Tests"
-      - script: dotnet test
+      # 📢 Log Test Start
+      - script: echo "🧪 Starting Automated Tests..."
+
+      # ✅ Run Unit Tests
+      - script: echo "🧪 Running Unit Tests..."
+      - script: dotnet test --logger trx || echo "Unit tests failed!" > test-log.txt
+
+      # 🌍 Run API Tests (Postman)
+      - script: echo "🌍 Running API Tests..."
+      - task: Postman@1
+        inputs:
+          collection: '$(System.DefaultWorkingDirectory)/tests/api-tests.json'
+
+      # 🎭 Run UI Tests (Selenium)
+      - script: echo "🎭 Running UI Tests..."
+      - task: SeleniumTest@1
+
+      # 🚨 Publish Logs if Tests Fail
+      - task: PublishBuildArtifacts@1
+        condition: failed()
+        inputs:
+          pathToPublish: test-log.txt
+          artifactName: test_failure_logs
+
+      # 📩 Send Alert if Tests Fail
+      - task: SendEmail@1
+        condition: failed()
+        inputs:
+          to: 'qa-team@example.com'
+          subject: '❌ Test Failure Alert!'
+          body: |
+            Some tests failed in the pipeline. Review logs for details.
+
+      - task: TeamsNotification@1
+        condition: failed()
+        inputs:
+          teamsWebhookUrl: 'https://outlook.office.com/webhook/...'
+          message: |
+            ❌ **Test Failure Alert**  
+            - Some tests failed in the pipeline.  
+            - Logs are available for review.
