@@ -5,14 +5,43 @@ parameters:
     type: string
   - name: slotName
     type: string
+  - name: azureSubscription
+    type: string
 
 jobs:
   - job: Deploy
     steps:
-      - script: echo "Deploying to ${{ parameters.environment }} Environment"
+      # 📢 Log Deployment Start
+      - script: echo "🚀 Deploying to ${{ parameters.environment }} Environment"
+
+      # 🔐 Ensure Secure Connection to Azure
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: '${{ parameters.azureSubscription }}'
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            echo "🔑 Logging into Azure..."
+            az login --service-principal -u $(AZURE_CLIENT_ID) -p $(AZURE_CLIENT_SECRET) --tenant $(AZURE_TENANT_ID)
+
+      # 📦 Deploy Application to Slot
       - task: AzureWebApp@1
         inputs:
-          azureSubscription: 'AzureSubscription'
+          azureSubscription: '${{ parameters.azureSubscription }}'
           appName: '${{ parameters.appName }}'
           package: '$(Build.ArtifactStagingDirectory)'
+
+      # 🔍 Validate Deployment Before Swap
+      - script: echo "🔍 Validating Deployment..."
+      - script: |
+          response=$(curl -s https://${{ parameters.appName }}-${{ parameters.slotName }}.azurewebsites.net/health)
+          if [[ "$response" != "healthy" ]]; then
+            echo "❌ Deployment validation failed!"
+            exit 1
+
+      # 🔄 Swap Slots for Zero Downtime Deployment
+      - script: echo "🔄 Swapping Deployment Slots"
       - script: az webapp deployment slot swap -n ${{ parameters.appName }} -s ${{ parameters.slotName }}
+
+      # 📢 Log Deployment Completion
+      - script: echo "✅ Deployment to ${{ parameters.environment }} completed successfully!"
