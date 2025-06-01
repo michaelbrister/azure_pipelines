@@ -1,0 +1,28 @@
+stages:
+  - stage: Testing
+    jobs:
+      - template: test-template.yml
+
+  - stage: Security_Scanning
+    jobs:
+      - template: security-template.yml
+
+  - stage: Deploy_Prod
+    condition: eq(variables['Build.SourceBranchName'], 'main')
+    jobs:
+      - job: Approval
+        pool: server
+        steps:
+          - task: ManualValidation@0
+            inputs:
+              instructions: 'Confirm deployment to production'
+              onTimeout: 'reject'
+
+      - job: Deploy_Prod
+        dependsOn: Approval
+        jobs:
+          - template: deploy-template.yml
+            parameters:
+              environment: 'Production'
+              appName: 'myapp-prod'
+              slotName: 'blue'
